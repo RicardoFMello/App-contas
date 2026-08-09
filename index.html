@@ -332,74 +332,136 @@ function monthRange(offset=0){
 async function loadDashboard(el){
   el.innerHTML = `<div class="card">Carregando indicadores...</div>`;
 
-  const thisM = monthRange(0);
-  const lastM = monthRange(-1);
-  const uid = currentUser.id;
+  try{
+    const thisM = monthRange(0);
+    const lastM = monthRange(-1);
+    const sixM = monthRange(-5);
+    const uid = currentUser.id;
+    const today = new Date().toISOString().slice(0,10);
 
-  const [entriesNow, entriesPrev, incomesNow, incomesPrev, goals, investments, overdue] = await Promise.all([
-    sb.from('bill_entries').select('*').eq('user_id', uid).gte('month_ref', thisM.start).lte('month_ref', thisM.end),
-    sb.from('bill_entries').select('*').eq('user_id', uid).gte('month_ref', lastM.start).lte('month_ref', lastM.end),
-    sb.from('incomes').select('*').eq('user_id', uid).gte('month_ref', thisM.start).lte('month_ref', thisM.end),
-    sb.from('incomes').select('*').eq('user_id', uid).gte('month_ref', lastM.start).lte('month_ref', lastM.end),
-    sb.from('goals').select('*').eq('user_id', uid),
-    sb.from('investments').select('*').eq('user_id', uid),
-    sb.from('bill_entries').select('*').eq('user_id', uid).neq('status','pago').lt('due_date', new Date().toISOString().slice(0,10))
-  ]);
+    const [entriesNow, entriesPrev, incomesNow, incomesPrev, goals, investments, overdue, history] = await Promise.all([
+      sb.from('bill_entries').select('*, bills(type,name)').eq('user_id', uid).gte('month_ref', thisM.start).lte('month_ref', thisM.end),
+      sb.from('bill_entries').select('*').eq('user_id', uid).gte('month_ref', lastM.start).lte('month_ref', lastM.end),
+      sb.from('incomes').select('*').eq('user_id', uid).gte('month_ref', thisM.start).lte('month_ref', thisM.end),
+      sb.from('incomes').select('*').eq('user_id', uid).gte('month_ref', lastM.start).lte('month_ref', lastM.end),
+      sb.from('goals').select('*').eq('user_id', uid),
+      sb.from('investments').select('*').eq('user_id', uid),
+      sb.from('bill_entries').select('*').eq('user_id', uid).neq('status','pago').lt('due_date', today),
+      sb.from('bill_entries').select('*').eq('user_id', uid).eq('status','pago').gte('month_ref', sixM.start).lte('month_ref', thisM.end)
+    ]);
 
-  const entries = entriesNow.data || [];
-  const entriesLast = entriesPrev.data || [];
-  const incomesData = incomesNow.data || [];
-  const incomesLast = incomesPrev.data || [];
-  const goalsData = goals.data || [];
-  const investData = investments.data || [];
+    [entriesNow, entriesPrev, incomesNow, incomesPrev, goals, investments, overdue, history].forEach(r => {
+      if(r.error) throw r.error;
+    });
 
-  const today = new Date().toISOString().slice(0,10);
-  const sum = (arr, f=x=>x.value) => arr.reduce((a,c)=>a+Number(f(c)||0), 0);
+    const entries = entriesNow.data || [];
+    const entriesLast = entriesPrev.data || [];
+    const incomesData = incomesNow.data || [];
+    const incomesLast = incomesPrev.data || [];
+    const goalsData = goals.data || [];
+    const investData = investments.data || [];
 
-  const receitas = sum(incomesData);
-  const receitasAnt = sum(incomesLast);
-  const despesasPrevistas = sum(entries);
-  const despesasPagas = sum(entries.filter(e => e.status === 'pago'));
-  const despesasAnt = sum(entriesLast.filter(e => e.status === 'pago'));
-  const vencidas = overdue.data || [];
-  const proximas = entries.filter(e => e.status !== 'pago' && e.due_date && e.due_date >= today && e.due_date <= monthRange(0).end);
-  const pagas = entries.filter(e => e.status === 'pago');
-  const saldo = receitas - despesasPagas;
-  const fluxoCaixa = receitas - despesasPrevistas;
-  const percentComprometido = receitas > 0 ? (despesasPrevistas/receitas*100) : 0;
-  const patrimonioInvestido = sum(investData);
+    const sum = (arr, f=x=>x.value) => arr.reduce((a,c)=>a+Number(f(c)||0), 0);
 
-  const reservaGoal = goalsData.find(g => (g.name||'').toLowerCase().includes('reserva'));
-  const reservaAtual = reservaGoal ? Number(reservaGoal.current_value||0) : 0;
-  const reservaAlvo = reservaGoal ? Number(reservaGoal.target_value||0) : 0;
-  const reservaPct = reservaAlvo > 0 ? (reservaAtual/reservaAlvo*100) : 0;
+    const receitas = sum(incomesData);
+    const receitasAnt = sum(incomesLast);
+    const despesasPrevistas = sum(entries);
+    const despesasPagas = sum(entries.filter(e => e.status === 'pago'));
+    const despesasAnt = sum(entriesLast.filter(e => e.status === 'pago'));
+    const vencidas = overdue.data || [];
+    const proximas = entries.filter(e => e.status !== 'pago' && e.due_date && e.due_date >= today && e.due_date <= thisM.end);
+    const pagas = entries.filter(e => e.status === 'pago');
+    const saldo = receitas - despesasPagas;
+    const fluxoCaixa = receitas - despesasPrevistas;
+    const percentComprometido = receitas > 0 ? (despesasPrevistas/receitas*100) : 0;
+    const patrimonioInvestido = sum(investData);
 
-  const deltaReceitas = receitasAnt > 0 ? ((receitas-receitasAnt)/receitasAnt*100) : 0;
-  const deltaDespesas = despesasAnt > 0 ? ((despesasPagas-despesasAnt)/despesasAnt*100) : 0;
+    const reservaGoal = goalsData.find(g => (g.name||'').toLowerCase().includes('reserva'));
+    const reservaAtual = reservaGoal ? Number(reservaGoal.current_value||0) : 0;
+    const reservaAlvo = reservaGoal ? Number(reservaGoal.target_value||0) : 0;
+    const reservaPct = reservaAlvo > 0 ? (reservaAtual/reservaAlvo*100) : 0;
 
-  const cards = [
-    { label:'Saldo do mês', value: formatBRL(saldo), sub: null },
-    { label:'Receitas', value: formatBRL(receitas), sub: fmtDelta(deltaReceitas, true) },
-    { label:'Despesas pagas', value: formatBRL(despesasPagas), sub: fmtDelta(deltaDespesas, false) },
-    { label:'Fluxo de caixa previsto', value: formatBRL(fluxoCaixa), sub: null },
-    { label:'Comprometimento da renda', value: formatPct(percentComprometido), sub: null },
-    { label:'Patrimônio investido', value: formatBRL(patrimonioInvestido), sub: null },
-    { label:'Reserva de emergência', value: formatBRL(reservaAtual), sub: reservaAlvo ? `${formatPct(reservaPct)} da meta` : 'Sem meta definida' },
-    { label:'Contas vencidas', value: vencidas.length, sub: vencidas.length ? 'Requer atenção' : 'Tudo em dia', danger: vencidas.length>0 },
-    { label:'Contas a vencer (este mês)', value: proximas.length, sub: null },
-    { label:'Contas pagas (este mês)', value: `${pagas.length}/${entries.length}`, sub: null }
-  ];
+    const deltaReceitas = receitasAnt > 0 ? ((receitas-receitasAnt)/receitasAnt*100) : 0;
+    const deltaDespesas = despesasAnt > 0 ? ((despesasPagas-despesasAnt)/despesasAnt*100) : 0;
 
-  el.innerHTML = `
-    <div class="grid grid-cols-4">
-      ${cards.map(c => `
-        <div class="card">
-          <div style="font-size:13px; color:var(--text-sub); margin-bottom:8px;">${c.label}</div>
-          <div style="font-size:22px; font-weight:700; ${c.danger?'color:var(--danger);':''}">${c.value}</div>
-          ${c.sub ? `<div style="font-size:12.5px; color:var(--text-sub); margin-top:4px;">${c.sub}</div>` : ''}
-        </div>`).join('')}
-    </div>
-  `;
+    const cards = [
+      { label:'Saldo do mês', value: formatBRL(saldo), sub: null },
+      { label:'Receitas', value: formatBRL(receitas), sub: fmtDelta(deltaReceitas, true) },
+      { label:'Despesas pagas', value: formatBRL(despesasPagas), sub: fmtDelta(deltaDespesas, false) },
+      { label:'Fluxo de caixa previsto', value: formatBRL(fluxoCaixa), sub: null },
+      { label:'Comprometimento da renda', value: formatPct(percentComprometido), sub: null },
+      { label:'Patrimônio investido', value: formatBRL(patrimonioInvestido), sub: null },
+      { label:'Reserva de emergência', value: formatBRL(reservaAtual), sub: reservaAlvo ? `${formatPct(reservaPct)} da meta` : 'Sem meta definida' },
+      { label:'Contas vencidas', value: vencidas.length, sub: vencidas.length ? 'Requer atenção' : 'Tudo em dia', danger: vencidas.length>0 },
+      { label:'Contas a vencer (este mês)', value: proximas.length, sub: null },
+      { label:'Contas pagas (este mês)', value: `${pagas.length}/${entries.length}`, sub: null }
+    ];
+
+    // Separação por tipo (fixas / cartões / parcelas) - só este mês
+    const typeLabel = { fixa:'Contas fixas', cartao:'Cartões', parcelada:'Parcelamentos' };
+    const byType = { fixa:0, cartao:0, parcelada:0 };
+    entries.forEach(e => {
+      const t = e.bills?.type || 'fixa';
+      if(byType[t] === undefined) byType[t] = 0;
+      byType[t] += Number(e.value||0);
+    });
+    const typeCards = Object.keys(byType).filter(t => byType[t] > 0).map(t => `
+      <div class="card">
+        <div style="font-size:13px; color:var(--text-sub); margin-bottom:8px;">${typeLabel[t] || t}</div>
+        <div style="font-size:20px; font-weight:700;">${formatBRL(byType[t])}</div>
+        <div style="font-size:12.5px; color:var(--text-sub); margin-top:4px;">${despesasPrevistas>0 ? formatPct(byType[t]/despesasPrevistas*100) : '0%'} do total do mês</div>
+      </div>`).join('');
+
+    // Histórico dos últimos 6 meses (gasto pago por mês)
+    const histByMonth = {};
+    for(let i=5; i>=0; i--){
+      const { start } = monthRange(-i);
+      histByMonth[start.slice(0,7)] = 0;
+    }
+    (history.data || []).forEach(e => {
+      const key = (e.month_ref||'').slice(0,7);
+      if(histByMonth[key] !== undefined) histByMonth[key] += Number(e.value||0);
+    });
+    const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const histEntries = Object.entries(histByMonth);
+    const maxVal = Math.max(1, ...histEntries.map(([,v]) => v));
+    const chartBars = histEntries.map(([key, val]) => {
+      const [y, m] = key.split('-');
+      const h = Math.max(4, (val / maxVal) * 120);
+      return `
+        <div style="display:flex; flex-direction:column; align-items:center; gap:6px; flex:1;">
+          <div style="font-size:11px; color:var(--text-sub);">${val>0 ? formatBRL(val).replace('R$','') : ''}</div>
+          <div style="width:70%; height:${h}px; background:var(--accent); border-radius:6px 6px 0 0;"></div>
+          <div style="font-size:11.5px; color:var(--text-sub);">${monthNames[parseInt(m,10)-1]}</div>
+        </div>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div class="grid grid-cols-4" style="margin-bottom:16px;">
+        ${cards.map(c => `
+          <div class="card">
+            <div style="font-size:13px; color:var(--text-sub); margin-bottom:8px;">${c.label}</div>
+            <div style="font-size:22px; font-weight:700; ${c.danger?'color:var(--danger);':''}">${c.value}</div>
+            ${c.sub ? `<div style="font-size:12.5px; color:var(--text-sub); margin-top:4px;">${c.sub}</div>` : ''}
+          </div>`).join('')}
+      </div>
+
+      ${typeCards ? `
+      <div style="font-size:14px; font-weight:600; margin:20px 0 10px;">Despesas do mês por tipo</div>
+      <div class="grid grid-cols-4" style="margin-bottom:16px;">${typeCards}</div>` : ''}
+
+      <div style="font-size:14px; font-weight:600; margin:20px 0 10px;">Gastos pagos - últimos 6 meses</div>
+      <div class="card">
+        <div style="display:flex; align-items:flex-end; gap:8px; height:150px;">${chartBars}</div>
+      </div>
+    `;
+  } catch(err){
+    console.error('Erro ao carregar dashboard:', err);
+    el.innerHTML = `<div class="card" style="color:var(--danger);">
+      Não foi possível carregar o dashboard.<br>
+      <span style="font-size:12.5px; color:var(--text-sub);">${escapeHtml(err.message || String(err))}</span>
+    </div>`;
+  }
 }
 
 function openModal(html){
