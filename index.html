@@ -531,6 +531,15 @@ async function loadContas(el){
   `;
 }
 
+function fmtDelta(pct, positiveIsGood){
+  if(!pct) return 'Sem comparativo anterior';
+  const up = pct > 0;
+  const good = positiveIsGood ? up : !up;
+  const color = good ? 'var(--success)' : 'var(--danger)';
+  const arrow = up ? '▲' : '▼';
+  return `<span style="color:${color}">${arrow} ${formatPct(Math.abs(pct))}</span> vs mês anterior`;
+}
+
 function formatDate(iso){
   if(!iso) return '';
   const [y,m,d] = iso.split('-');
