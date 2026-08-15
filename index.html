@@ -297,6 +297,16 @@ const PAGES = [
 
 let currentPage = 'dashboard';
 let currentUser = null;
+let pageCache = {};
+let loadToken = 0;
+
+function startLoad(pageId){
+  const token = ++loadToken;
+  return { stale: () => (currentPage !== pageId || loadToken !== token) };
+}
+function invalidateCache(...ids){
+  ids.forEach(id => delete pageCache[id]);
+}
 
 function renderNav(){
   const build = (mobile) => PAGES.map(p => `
@@ -358,6 +368,8 @@ function monthRange(offset=0){
 }
 
 async function loadDashboard(el){
+  if(pageCache.dashboard){ el.innerHTML = pageCache.dashboard; return; }
+  const guard = startLoad('dashboard');
   el.innerHTML = `<div class="card">Carregando indicadores...</div>`;
 
   try{
@@ -464,7 +476,7 @@ async function loadDashboard(el){
         </div>`;
     }).join('');
 
-    el.innerHTML = `
+   const html = `
       <div class="grid grid-cols-4" style="margin-bottom:16px;">
         ${cards.map(c => `
           <div class="card">
@@ -480,17 +492,21 @@ async function loadDashboard(el){
 
       <div style="font-size:14px; font-weight:600; margin:20px 0 10px;">Gastos pagos - últimos 6 meses</div>
       <div class="card">
-        <div style="display:flex; align-items:flex-end; gap:8px; height:150px;">${chartBars}</div>
+      <div style="display:flex; align-items:flex-end; gap:8px; height:150px;">${chartBars}</div>
       </div>
     `;
+    if(guard.stale()) return;
+    pageCache.dashboard = html;
+    el.innerHTML = html;
   } catch(err){
+    if(guard.stale()) return;
     console.error('Erro ao carregar dashboard:', err);
     el.innerHTML = `<div class="card" style="color:var(--danger);">
       Não foi possível carregar o dashboard.<br>
       <span style="font-size:12.5px; color:var(--text-sub);">${escapeHtml(err.message || String(err))}</span>
     </div>`;
   }
-}
+}  
 
 function openModal(html){
   document.getElementById('modal-root').innerHTML = `
@@ -525,11 +541,15 @@ document.getElementById('fab-add').addEventListener('click', () => {
 });
 
 async function loadContas(el){
+  if(pageCache.contas){ el.innerHTML = pageCache.contas; return; }
+  const guard = startLoad('contas');
   el.innerHTML = `<div class="card">Carregando contas...</div>`;
   const uid = currentUser.id;
 
   const { data: bills } = await sb.from('bills').select('*').eq('user_id', uid).neq('type', 'cartao').order('name');
   const { data: entries } = await sb.from('bill_entries').select('*').eq('user_id', uid).order('due_date', { ascending:false });
+
+  if(guard.stale()) return;
 
   const latestByBill = {};
   (entries||[]).forEach(e => { if(!latestByBill[e.bill_id]) latestByBill[e.bill_id] = e; });
@@ -551,12 +571,14 @@ async function loadContas(el){
       </div>`;
   }).join('') || '<div class="item-sub">Nenhuma conta cadastrada ainda.</div>';
 
-  el.innerHTML = `
+ const html = `
     <div class="card" style="margin-bottom:16px; display:flex; justify-content:flex-end;">
       <button class="btn-primary" style="width:auto; padding:10px 18px;" onclick="openAddBillModal()">+ Nova conta</button>
     </div>
     <div class="card">${rows}</div>
   `;
+  pageCache.contas = html;
+  el.innerHTML = html;
 }
 
 function fmtDelta(pct, positiveIsGood){
@@ -607,6 +629,7 @@ async function saveBill(){
     bill_id: bill.id, user_id: currentUser.id, month_ref: due, value, due_date: due, status:'pendente'
   })); 
 
+ invalidateCache('contas', 'dashboard');
   closeModal();
   loadContas(document.getElementById('page-content'));
 }
@@ -632,6 +655,7 @@ async function saveEntry(billId){
     bill_id: billId, user_id: currentUser.id, month_ref: due, value, due_date: due, status:'pendente'
   }));
 
+ invalidateCache('contas', 'cartoes', 'dashboard');
   closeModal();
   loadContas(document.getElementById('page-content'));
 }
@@ -640,17 +664,22 @@ async function markPaid(entryId){
   await dbWrite(sb.from('bill_entries').update({
     status:'pago', paid_date: localDateStr()
   }).eq('id', entryId));
+  invalidateCache('contas', 'cartoes', 'dashboard');
   const page = document.getElementById('page-title').textContent;
   if(currentPage === 'cartoes') loadCartoes(document.getElementById('page-content'));
   else loadContas(document.getElementById('page-content'));
 }
 
 async function loadCartoes(el){
+  if(pageCache.cartoes){ el.innerHTML = pageCache.cartoes; return; }
+  const guard = startLoad('cartoes');
   el.innerHTML = `<div class="card">Carregando cartões...</div>`;
   const uid = currentUser.id;
 
   const { data: cards } = await sb.from('bills').select('*').eq('user_id', uid).eq('type', 'cartao').order('name');
   const { data: entries } = await sb.from('bill_entries').select('*').eq('user_id', uid).order('due_date', { ascending:false });
+
+  if(guard.stale()) return;
 
   const latestByCard = {};
   (entries||[]).forEach(e => { if(!latestByCard[e.bill_id]) latestByCard[e.bill_id] = e; });
@@ -677,22 +706,28 @@ async function loadCartoes(el){
     return a + (e && e.status !== 'pago' ? Number(e.value||0) : 0);
   }, 0);
 
-  el.innerHTML = `
+const html = `
     <div class="card" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
       <div><div class="item-sub">Total em aberto</div><div style="font-size:20px; font-weight:700;">${formatBRL(totalAberto)}</div></div>
       <button class="btn-primary" style="width:auto; padding:10px 18px;" onclick="openAddCardModal()">+ Novo cartão</button>
     </div>
     <div class="card">${rows}</div>
   `;
-}
+  pageCache.cartoes = html;
+  el.innerHTML = html;
+} 
 
 async function loadReceitas(el){
+  if(pageCache.receitas){ el.innerHTML = pageCache.receitas; return; }
+  const guard = startLoad('receitas');
   el.innerHTML = `<div class="card">Carregando receitas...</div>`;
   const uid = currentUser.id;
   const { start, end } = monthRange(0);
 
   const { data } = await sb.from('incomes').select('*').eq('user_id', uid)
     .gte('month_ref', start).lte('month_ref', end).order('month_ref', { ascending:false });
+
+  if(guard.stale()) return;
 
   const items = data || [];
   const total = items.reduce((a,c)=>a+Number(c.value||0),0);
@@ -711,15 +746,16 @@ async function loadReceitas(el){
       </div>
     </div>`).join('') || '<div class="item-sub">Nenhuma receita lançada este mês.</div>';
 
-  el.innerHTML = `
+ const html = `
     <div class="card" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
       <div><div class="item-sub">Total recebido este mês</div><div style="font-size:20px; font-weight:700;">${formatBRL(total)}</div></div>
       <button class="btn-primary" style="width:auto; padding:10px 18px;" onclick="openAddIncomeModal()">+ Nova receita</button>
     </div>
     <div class="card">${rows}</div>
   `;
+  pageCache.receitas = html;
+  el.innerHTML = html;
 }
-
 function openAddIncomeModal(){
   openModal(`
     <h3>Nova receita</h3>
@@ -749,18 +785,23 @@ async function saveIncome(){
   if(!value || !month_ref) return;
 
  await dbWrite(sb.from('incomes').insert({ user_id: currentUser.id, type, description, value, month_ref }));
+  invalidateCache('receitas', 'dashboard');
   closeModal();
   loadReceitas(document.getElementById('page-content'));
 }
 
 async function deleteIncome(id){
   await dbWrite(sb.from('incomes').delete().eq('id', id));
+  invalidateCache('receitas', 'dashboard');
   loadReceitas(document.getElementById('page-content'));
 }
 
 async function loadMetas(el){
+  if(pageCache.metas){ el.innerHTML = pageCache.metas; return; }
+  const guard = startLoad('metas');
   el.innerHTML = `<div class="card">Carregando metas...</div>`;
   const { data } = await sb.from('goals').select('*').eq('user_id', currentUser.id).order('created_at' , { ascending:true });
+  if(guard.stale()) return;
   const goalsData = data || [];
 
   const cards = goalsData.map(g => {
@@ -777,12 +818,14 @@ async function loadMetas(el){
       </div>`;
   }).join('') || '<div class="card"><div class="item-sub">Nenhuma meta cadastrada ainda.</div></div>';
 
-  el.innerHTML = `
+ const html = `
     <div class="card" style="margin-bottom:16px; display:flex; justify-content:flex-end;">
       <button class="btn-primary" style="width:auto; padding:10px 18px;" onclick="openAddGoalModal()">+ Nova meta</button>
     </div>
     ${cards}
   `;
+  pageCache.metas = html;
+  el.innerHTML = html;
 }
 
 function openAddGoalModal(){
@@ -806,11 +849,11 @@ async function saveGoal(){
   const target_date = document.getElementById('f-goal-date').value || null;
   if(!name || !target_value) return;
 
- await dbWrite(sb.from('goals').insert({ user_id: currentUser.id, name, current_value, target_value, target_date }));
+await dbWrite(sb.from('goals').insert({ user_id: currentUser.id, name, current_value, target_value, target_date }));
+  invalidateCache('metas', 'dashboard');
   closeModal();
   loadMetas(document.getElementById('page-content'));
 }
-
 function openUpdateGoalModal(goalId, currentValue){
   openModal(`
     <h3>Atualizar valor da meta</h3>
@@ -825,13 +868,17 @@ function openUpdateGoalModal(goalId, currentValue){
 async function updateGoalValue(goalId){
   const current_value = parseFloat(document.getElementById('f-goal-update').value || 0);
   await dbWrite(sb.from('goals').update({ current_value }).eq('id', goalId));
+  invalidateCache('metas', 'dashboard');
   closeModal();
   loadMetas(document.getElementById('page-content'));
 }
 
 async function loadInvestimentos(el){
+  if(pageCache.investimentos){ el.innerHTML = pageCache.investimentos; return; }
+  const guard = startLoad('investimentos');
   el.innerHTML = `<div class="card">Carregando investimentos...</div>`;
   const { data } = await sb.from('investments').select('*').eq('user_id', currentUser.id).order('date', { ascending:false });
+  if(guard.stale()) return;
   const items = data || [];
   const total = items.reduce((a,c)=>a+Number(c.value||0),0);
 
@@ -858,7 +905,7 @@ async function loadInvestimentos(el){
       </div>
     </div>`).join('') || '<div class="item-sub">Nenhum investimento cadastrado ainda.</div>';
 
-  el.innerHTML = `
+ const html = `
     <div class="card" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
       <div><div class="item-sub">Patrimônio investido</div><div style="font-size:20px; font-weight:700;">${formatBRL(total)}</div></div>
       <button class="btn-primary" style="width:auto; padding:10px 18px;" onclick="openAddInvestmentModal()">+ Novo investimento</button>
@@ -866,6 +913,8 @@ async function loadInvestimentos(el){
     ${summaryCards ? `<div class="grid grid-cols-4" style="margin-bottom:16px;">${summaryCards}</div>` : ''}
     <div class="card">${rows}</div>
   `;
+  pageCache.investimentos = html;
+  el.innerHTML = html;
 }
 
 function openAddInvestmentModal(){
@@ -897,21 +946,26 @@ async function saveInvestment(){
   const date = document.getElementById('f-inv-date').value;
   if(!name || !value) return;
 
-  await dbWrite(sb.from('investments').insert({ user_id: currentUser.id, type, name, value, date }));
+await dbWrite(sb.from('investments').insert({ user_id: currentUser.id, type, name, value, date }));
+  invalidateCache('investimentos', 'dashboard');
   closeModal();
   loadInvestimentos(document.getElementById('page-content'));
 }
 
 async function deleteInvestment(id){
   await dbWrite(sb.from('investments').delete().eq('id', id));
+  invalidateCache('investimentos', 'dashboard');
   loadInvestimentos(document.getElementById('page-content'));
-}
+} 
 
 async function loadConfig(el){
+  if(pageCache.config){ el.innerHTML = pageCache.config; return; }
+  const guard = startLoad('config');
   el.innerHTML = `<div class="card">Carregando...</div>`;
   const { data: profile } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+  if(guard.stale()) return;
 
-  el.innerHTML = `
+  const html = `
     <div class="card" style="margin-bottom:16px;">
       <div class="item-title" style="margin-bottom:14px;">Perfil</div>
       <div class="field"><label>Nome</label><input type="text" id="f-profile-name" value="${escapeHtml(profile?.name) || ''}"></div>
@@ -924,11 +978,14 @@ async function loadConfig(el){
       <button class="btn-secondary" onclick="exportData()">Exportar dados</button>
     </div>
   `;
+  pageCache.config = html;
+  el.innerHTML = html;
 }
 
 async function saveProfile(){
   const name = document.getElementById('f-profile-name').value.trim();
   await dbWrite(sb.from('profiles').upsert({ id: currentUser.id, name }));
+  invalidateCache('config');
   alert('Perfil salvo.');
 }
 
@@ -980,6 +1037,7 @@ async function saveCard(){
     bill_id: card.id, user_id: currentUser.id, month_ref: due, value, due_date: due, status:'pendente'
   }));
 
+  invalidateCache('cartoes', 'dashboard');
   closeModal();
   loadCartoes(document.getElementById('page-content'));
 }
