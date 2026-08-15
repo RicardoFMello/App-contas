@@ -225,6 +225,14 @@ body{
 const SUPABASE_URL = 'https://sotgkmnrmwmvsozspvnv.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_Ekks5Rl-NzVefdNwJ-r__Q_y9VyGzqX';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  async function dbWrite(promise){
+  const { data, error } = await promise;
+  if(error){
+    alert('Erro ao salvar: ' + error.message);
+    throw error;
+  }
+  return data;
+}
 
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app');
@@ -571,14 +579,13 @@ async function saveBill(){
   const due = document.getElementById('f-due').value;
   if(!name || !due) return;
 
-  const { data: bill, error } = await sb.from('bills').insert({
+ const bill = await dbWrite(sb.from('bills').insert({
     user_id: currentUser.id, name, category, type
-  }).select().single();
-  if(error){ alert('Erro ao salvar conta.'); return; }
+  }).select().single());
 
-  await sb.from('bill_entries').insert({
+  await dbWrite(sb.from('bill_entries').insert({
     bill_id: bill.id, user_id: currentUser.id, month_ref: due, value, due_date: due, status:'pendente'
-  });
+  })); 
 
   closeModal();
   loadContas(document.getElementById('page-content'));
@@ -601,18 +608,18 @@ async function saveEntry(billId){
   const due = document.getElementById('f-entry-due').value;
   if(!due) return;
 
-  await sb.from('bill_entries').insert({
+ await dbWrite(sb.from('bill_entries').insert({
     bill_id: billId, user_id: currentUser.id, month_ref: due, value, due_date: due, status:'pendente'
-  });
+  }));
 
   closeModal();
   loadContas(document.getElementById('page-content'));
 }
 
 async function markPaid(entryId){
-  await sb.from('bill_entries').update({
+  await dbWrite(sb.from('bill_entries').update({
     status:'pago', paid_date: new Date().toISOString().slice(0,10)
-  }).eq('id', entryId);
+  }).eq('id', entryId));
   const page = document.getElementById('page-title').textContent;
   if(currentPage === 'cartoes') loadCartoes(document.getElementById('page-content'));
   else loadContas(document.getElementById('page-content'));
@@ -721,13 +728,13 @@ async function saveIncome(){
   const month_ref = document.getElementById('f-income-date').value;
   if(!value || !month_ref) return;
 
-  await sb.from('incomes').insert({ user_id: currentUser.id, type, description, value, month_ref });
+ await dbWrite(sb.from('incomes').insert({ user_id: currentUser.id, type, description, value, month_ref }));
   closeModal();
   loadReceitas(document.getElementById('page-content'));
 }
 
 async function deleteIncome(id){
-  await sb.from('incomes').delete().eq('id', id);
+  await dbWrite(sb.from('incomes').delete().eq('id', id));
   loadReceitas(document.getElementById('page-content'));
 }
 
@@ -779,7 +786,7 @@ async function saveGoal(){
   const target_date = document.getElementById('f-goal-date').value || null;
   if(!name || !target_value) return;
 
-  await sb.from('goals').insert({ user_id: currentUser.id, name, current_value, target_value, target_date });
+ await dbWrite(sb.from('goals').insert({ user_id: currentUser.id, name, current_value, target_value, target_date }));
   closeModal();
   loadMetas(document.getElementById('page-content'));
 }
@@ -797,7 +804,7 @@ function openUpdateGoalModal(goalId, currentValue){
 
 async function updateGoalValue(goalId){
   const current_value = parseFloat(document.getElementById('f-goal-update').value || 0);
-  await sb.from('goals').update({ current_value }).eq('id', goalId);
+  await dbWrite(sb.from('goals').update({ current_value }).eq('id', goalId));
   closeModal();
   loadMetas(document.getElementById('page-content'));
 }
@@ -870,13 +877,13 @@ async function saveInvestment(){
   const date = document.getElementById('f-inv-date').value;
   if(!name || !value) return;
 
-  await sb.from('investments').insert({ user_id: currentUser.id, type, name, value, date });
+  await dbWrite(sb.from('investments').insert({ user_id: currentUser.id, type, name, value, date }));
   closeModal();
   loadInvestimentos(document.getElementById('page-content'));
 }
 
 async function deleteInvestment(id){
-  await sb.from('investments').delete().eq('id', id);
+  await dbWrite(sb.from('investments').delete().eq('id', id));
   loadInvestimentos(document.getElementById('page-content'));
 }
 
@@ -901,7 +908,7 @@ async function loadConfig(el){
 
 async function saveProfile(){
   const name = document.getElementById('f-profile-name').value.trim();
-  await sb.from('profiles').upsert({ id: currentUser.id, name });
+  await dbWrite(sb.from('profiles').upsert({ id: currentUser.id, name }));
   alert('Perfil salvo.');
 }
 
@@ -945,14 +952,13 @@ async function saveCard(){
   const due = document.getElementById('f-card-due').value;
   if(!name || !due) return;
 
-  const { data: card, error } = await sb.from('bills').insert({
+ const card = await dbWrite(sb.from('bills').insert({
     user_id: currentUser.id, name, category:'Cartão de Crédito', type:'cartao'
-  }).select().single();
-  if(error){ alert('Erro ao salvar cartão.'); return; }
+  }).select().single());
 
-  await sb.from('bill_entries').insert({
+  await dbWrite(sb.from('bill_entries').insert({
     bill_id: card.id, user_id: currentUser.id, month_ref: due, value, due_date: due, status:'pendente'
-  });
+  }));
 
   closeModal();
   loadCartoes(document.getElementById('page-content'));
