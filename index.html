@@ -546,8 +546,14 @@ async function loadContas(el){
   el.innerHTML = `<div class="card">Carregando contas...</div>`;
   const uid = currentUser.id;
 
-  const { data: bills } = await sb.from('bills').select('*').eq('user_id', uid).neq('type', 'cartao').order('name');
-  const { data: entries } = await sb.from('bill_entries').select('*').eq('user_id', uid).order('due_date', { ascending:false });
+  try{
+
+  const [{ data: bills, error: e1 }, { data: entries, error: e2 }] = await Promise.all([
+    sb.from('bills').select('*').eq('user_id', uid).neq('type', 'cartao').order('name'),
+    sb.from('bill_entries').select('*').eq('user_id', uid).order('due_date', { ascending:false }).limit(300)
+  ]);
+  if(e1) throw e1;
+  if(e2) throw e2;
 
   if(guard.stale()) return;
 
@@ -579,6 +585,12 @@ async function loadContas(el){
   `;
   pageCache.contas = html;
   el.innerHTML = html;
+  } catch(err){
+    if(guard.stale()) return;
+    console.error('Erro ao carregar contas:', err);
+    el.innerHTML = `<div class="card" style="color:var(--danger);">Não foi possível carregar as contas.<br>
+      <span style="font-size:12.5px; color:var(--text-sub);">${escapeHtml(err.message || String(err))}</span></div>`;
+  }
 }
 
 function fmtDelta(pct, positiveIsGood){
@@ -676,8 +688,14 @@ async function loadCartoes(el){
   el.innerHTML = `<div class="card">Carregando cartões...</div>`;
   const uid = currentUser.id;
 
-  const { data: cards } = await sb.from('bills').select('*').eq('user_id', uid).eq('type', 'cartao').order('name');
-  const { data: entries } = await sb.from('bill_entries').select('*').eq('user_id', uid).order('due_date', { ascending:false });
+  try{
+
+  const [{ data: cards, error: e1 }, { data: entries, error: e2 }] = await Promise.all([
+    sb.from('bills').select('*').eq('user_id', uid).eq('type', 'cartao').order('name'),
+    sb.from('bill_entries').select('*').eq('user_id', uid).order('due_date', { ascending:false }).limit(300)
+  ]);
+  if(e1) throw e1;
+  if(e2) throw e2;
 
   if(guard.stale()) return;
 
@@ -715,7 +733,13 @@ const html = `
   `;
   pageCache.cartoes = html;
   el.innerHTML = html;
-} 
+  } catch(err){
+    if(guard.stale()) return;
+    console.error('Erro ao carregar cartões:', err);
+    el.innerHTML = `<div class="card" style="color:var(--danger);">Não foi possível carregar os cartões.<br>
+      <span style="font-size:12.5px; color:var(--text-sub);">${escapeHtml(err.message || String(err))}</span></div>`;
+  }
+}
 
 async function loadReceitas(el){
   if(pageCache.receitas){ el.innerHTML = pageCache.receitas; return; }
@@ -724,8 +748,11 @@ async function loadReceitas(el){
   const uid = currentUser.id;
   const { start, end } = monthRange(0);
 
-  const { data } = await sb.from('incomes').select('*').eq('user_id', uid)
+  try{
+
+  const { data, error } = await sb.from('incomes').select('*').eq('user_id', uid)
     .gte('month_ref', start).lte('month_ref', end).order('month_ref', { ascending:false });
+  if(error) throw error;
 
   if(guard.stale()) return;
 
@@ -755,7 +782,14 @@ async function loadReceitas(el){
   `;
   pageCache.receitas = html;
   el.innerHTML = html;
+  } catch(err){
+    if(guard.stale()) return;
+    console.error('Erro ao carregar receitas:', err);
+    el.innerHTML = `<div class="card" style="color:var(--danger);">Não foi possível carregar as receitas.<br>
+      <span style="font-size:12.5px; color:var(--text-sub);">${escapeHtml(err.message || String(err))}</span></div>`;
+  }
 }
+
 function openAddIncomeModal(){
   openModal(`
     <h3>Nova receita</h3>
@@ -800,7 +834,9 @@ async function loadMetas(el){
   if(pageCache.metas){ el.innerHTML = pageCache.metas; return; }
   const guard = startLoad('metas');
   el.innerHTML = `<div class="card">Carregando metas...</div>`;
-  const { data } = await sb.from('goals').select('*').eq('user_id', currentUser.id).order('created_at' , { ascending:true });
+  try{
+  const { data, error } = await sb.from('goals').select('*').eq('user_id', currentUser.id).order('created_at' , { ascending:true });
+  if(error) throw error;
   if(guard.stale()) return;
   const goalsData = data || [];
 
@@ -826,6 +862,12 @@ async function loadMetas(el){
   `;
   pageCache.metas = html;
   el.innerHTML = html;
+  } catch(err){
+    if(guard.stale()) return;
+    console.error('Erro ao carregar metas:', err);
+    el.innerHTML = `<div class="card" style="color:var(--danger);">Não foi possível carregar as metas.<br>
+      <span style="font-size:12.5px; color:var(--text-sub);">${escapeHtml(err.message || String(err))}</span></div>`;
+  }
 }
 
 function openAddGoalModal(){
@@ -877,7 +919,9 @@ async function loadInvestimentos(el){
   if(pageCache.investimentos){ el.innerHTML = pageCache.investimentos; return; }
   const guard = startLoad('investimentos');
   el.innerHTML = `<div class="card">Carregando investimentos...</div>`;
-  const { data } = await sb.from('investments').select('*').eq('user_id', currentUser.id).order('date', { ascending:false });
+  try{
+  const { data, error } = await sb.from('investments').select('*').eq('user_id', currentUser.id).order('date', { ascending:false });
+  if(error) throw error;
   if(guard.stale()) return;
   const items = data || [];
   const total = items.reduce((a,c)=>a+Number(c.value||0),0);
@@ -915,6 +959,12 @@ async function loadInvestimentos(el){
   `;
   pageCache.investimentos = html;
   el.innerHTML = html;
+  } catch(err){
+    if(guard.stale()) return;
+    console.error('Erro ao carregar investimentos:', err);
+    el.innerHTML = `<div class="card" style="color:var(--danger);">Não foi possível carregar os investimentos.<br>
+      <span style="font-size:12.5px; color:var(--text-sub);">${escapeHtml(err.message || String(err))}</span></div>`;
+  }
 }
 
 function openAddInvestmentModal(){
@@ -962,7 +1012,9 @@ async function loadConfig(el){
   if(pageCache.config){ el.innerHTML = pageCache.config; return; }
   const guard = startLoad('config');
   el.innerHTML = `<div class="card">Carregando...</div>`;
-  const { data: profile } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+  try{
+  const { data: profile, error } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+  if(error) throw error;
   if(guard.stale()) return;
 
   const html = `
@@ -980,6 +1032,12 @@ async function loadConfig(el){
   `;
   pageCache.config = html;
   el.innerHTML = html;
+  } catch(err){
+    if(guard.stale()) return;
+    console.error('Erro ao carregar configurações:', err);
+    el.innerHTML = `<div class="card" style="color:var(--danger);">Não foi possível carregar as configurações.<br>
+      <span style="font-size:12.5px; color:var(--text-sub);">${escapeHtml(err.message || String(err))}</span></div>`;
+  }
 }
 
 async function saveProfile(){
