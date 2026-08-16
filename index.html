@@ -647,6 +647,61 @@ async function saveBill(){
   loadContas(document.getElementById('page-content'));
 }
 
+  function openEditBillModal(id, nameEnc, categoryEnc){
+  const name = decodeURIComponent(nameEnc);
+  const category = decodeURIComponent(categoryEnc);
+  openModal(`
+    <h3>Editar conta</h3>
+    <div class="field"><label>Nome</label><input type="text" id="f-edit-bill-name" value="${escapeHtml(name)}"></div>
+    <div class="field"><label>Categoria</label><input type="text" id="f-edit-bill-category" value="${escapeHtml(category)}"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveEditBill('${id}')">Salvar</button>
+    </div>
+  `);
+}
+
+async function saveEditBill(id){
+  const name = document.getElementById('f-edit-bill-name').value.trim();
+  const category = document.getElementById('f-edit-bill-category').value.trim();
+  if(!name) return;
+  await dbWrite(sb.from('bills').update({ name, category }).eq('id', id));
+  invalidateCache('contas', 'cartoes', 'dashboard');
+  closeModal();
+  if(currentPage === 'cartoes') loadCartoes(document.getElementById('page-content'));
+  else loadContas(document.getElementById('page-content'));
+}
+
+function openEditEntryModal(entryId, value, dueDate, status){
+  openModal(`
+    <h3>Editar lançamento</h3>
+    <div class="field"><label>Valor</label><input type="number" step="0.01" id="f-edit-entry-value" value="${value}"></div>
+    <div class="field"><label>Vencimento</label><input type="date" id="f-edit-entry-due" value="${dueDate||''}"></div>
+    <div class="field"><label>Status</label>
+      <select id="f-edit-entry-status">
+        <option value="pendente" ${status==='pendente'?'selected':''}>Pendente</option>
+        <option value="pago" ${status==='pago'?'selected':''}>Pago</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveEditEntry('${entryId}')">Salvar</button>
+    </div>
+  `);
+}
+
+async function saveEditEntry(entryId){
+  const value = parseFloat(document.getElementById('f-edit-entry-value').value || 0);
+  const due_date = document.getElementById('f-edit-entry-due').value;
+  const status = document.getElementById('f-edit-entry-status').value;
+  if(!due_date) return;
+  await dbWrite(sb.from('bill_entries').update({ value, due_date, status }).eq('id', entryId));
+  invalidateCache('contas', 'cartoes', 'dashboard');
+  closeModal();
+  if(currentPage === 'cartoes') loadCartoes(document.getElementById('page-content'));
+  else loadContas(document.getElementById('page-content'));
+}
+
 function openAddEntryModal(billId, lastValue){
   openModal(`
     <h3>Lançar novo mês</h3>
@@ -712,10 +767,12 @@ async function loadCartoes(el){
           <div class="item-sub">${e ? 'Fatura de ' + formatDate(e.due_date) : 'Sem fatura lançada'}</div>
         </div>
         <div class="item-actions">
-          ${e ? statusBadge(e) : ''}
+         ${e ? statusBadge(e) : ''}
           <span style="font-weight:600; min-width:90px; text-align:right;">${e ? formatBRL(e.value) : ''}</span>
+          ${e ? `<button class="btn-secondary btn-sm" onclick="openEditEntryModal('${e.id}','${e.value}','${e.due_date}','${e.status}')">Editar</button>` : ''}
           ${e && e.status !== 'pago' ? `<button class="btn-secondary btn-sm" onclick="markPaid('${e.id}')">Marcar pago</button>` : ''}
           <button class="btn-secondary btn-sm" onclick="openAddEntryModal('${c.id}', '${(e?e.value:0)}')">Lançar fatura</button>
+          <button class="btn-secondary btn-sm" onclick="openEditBillModal('${c.id}','${encodeURIComponent(c.name)}','${encodeURIComponent(c.category||'')}')">⚙️</button>
         </div>
       </div>`;
   }).join('') || '<div class="item-sub">Nenhum cartão cadastrado ainda.</div>';
@@ -847,7 +904,7 @@ async function loadMetas(el){
       <div class="goal-card">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div class="item-title">${escapeHtml(g.name)}</div>
-          <button class="btn-secondary btn-sm" onclick="openUpdateGoalModal('${g.id}', ${g.current_value})">Atualizar</button>
+          <button class="btn-secondary btn-sm" onclick="openUpdateGoalModal('${g.id}','${encodeURIComponent(g.name)}',${g.current_value},${g.target_value},'${g.target_date||''}')">Editar</button>
         </div>
         <div class="item-sub" style="margin-top:4px;">${formatBRL(g.current_value)} de ${formatBRL(g.target_value)} ${g.target_date ? '· até ' + formatDate(g.target_date) : ''}</div>
         <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;"></div></div>
@@ -897,15 +954,31 @@ await dbWrite(sb.from('goals').insert({ user_id: currentUser.id, name, current_v
   closeModal();
   loadMetas(document.getElementById('page-content'));
 }
-function openUpdateGoalModal(goalId, currentValue){
+function openUpdateGoalModal(goalId, nameEnc, currentValue, targetValue, targetDate){
+  const name = decodeURIComponent(nameEnc);
   openModal(`
-    <h3>Atualizar valor da meta</h3>
-    <div class="field"><label>Novo valor atual</label><input type="number" step="0.01" id="f-goal-update" value="${currentValue}"></div>
+    <h3>Editar meta</h3>
+    <div class="field"><label>Nome</label><input type="text" id="f-goal-name-edit" value="${escapeHtml(name)}"></div>
+    <div class="field"><label>Valor atual</label><input type="number" step="0.01" id="f-goal-update" value="${currentValue}"></div>
+    <div class="field"><label>Valor alvo</label><input type="number" step="0.01" id="f-goal-target-edit" value="${targetValue}"></div>
+    <div class="field"><label>Data alvo (opcional)</label><input type="date" id="f-goal-date-edit" value="${targetDate||''}"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn-primary" onclick="updateGoalValue('${goalId}')">Salvar</button>
     </div>
   `);
+}
+
+async function updateGoalValue(goalId){
+  const name = document.getElementById('f-goal-name-edit').value.trim();
+  const current_value = parseFloat(document.getElementById('f-goal-update').value || 0);
+  const target_value = parseFloat(document.getElementById('f-goal-target-edit').value || 0);
+  const target_date = document.getElementById('f-goal-date-edit').value || null;
+  if(!name || !target_value) return;
+  await dbWrite(sb.from('goals').update({ name, current_value, target_value, target_date }).eq('id', goalId));
+  invalidateCache('metas', 'dashboard');
+  closeModal();
+  loadMetas(document.getElementById('page-content'));
 }
 
 async function updateGoalValue(goalId){
@@ -946,6 +1019,7 @@ async function loadInvestimentos(el){
       </div>
       <div class="item-actions">
         <span style="font-weight:600;">${formatBRL(i.value)}</span>
+        <button class="btn-secondary btn-sm" onclick="openEditInvestmentModal('${i.id}','${encodeURIComponent(i.name)}','${i.type}','${i.value}','${i.date}')">Editar</button>
         <button class="btn-secondary btn-sm" onclick="deleteInvestment('${i.id}')">Excluir</button>
       </div>
     </div>`).join('') || '<div class="item-sub">Nenhum investimento cadastrado ainda.</div>';
@@ -1007,7 +1081,42 @@ async function deleteInvestment(id){
   await dbWrite(sb.from('investments').delete().eq('id', id));
   invalidateCache('investimentos', 'dashboard');
   loadInvestimentos(document.getElementById('page-content'));
-} 
+}
+
+function openEditInvestmentModal(id, nameEnc, type, value, date){
+  const name = decodeURIComponent(nameEnc);
+  openModal(`
+    <h3>Editar investimento</h3>
+    <div class="field"><label>Tipo</label>
+      <select id="f-edit-inv-type">
+        <option value="renda_fixa" ${type==='renda_fixa'?'selected':''}>Renda fixa</option>
+        <option value="acoes" ${type==='acoes'?'selected':''}>Ações</option>
+        <option value="fundos" ${type==='fundos'?'selected':''}>Fundos</option>
+        <option value="cripto" ${type==='cripto'?'selected':''}>Criptomoedas</option>
+        <option value="outro" ${type==='outro'?'selected':''}>Outro</option>
+      </select>
+    </div>
+    <div class="field"><label>Nome</label><input type="text" id="f-edit-inv-name" value="${escapeHtml(name)}"></div>
+    <div class="field"><label>Valor atual</label><input type="number" step="0.01" id="f-edit-inv-value" value="${value}"></div>
+    <div class="field"><label>Data</label><input type="date" id="f-edit-inv-date" value="${date}"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveEditInvestment('${id}')">Salvar</button>
+    </div>
+  `);
+}
+
+async function saveEditInvestment(id){
+  const type = document.getElementById('f-edit-inv-type').value;
+  const name = document.getElementById('f-edit-inv-name').value.trim();
+  const value = parseFloat(document.getElementById('f-edit-inv-value').value || 0);
+  const date = document.getElementById('f-edit-inv-date').value;
+  if(!name || !value) return;
+  await dbWrite(sb.from('investments').update({ type, name, value, date }).eq('id', id));
+  invalidateCache('investimentos', 'dashboard');
+  closeModal();
+  loadInvestimentos(document.getElementById('page-content'));
+}
 
 async function loadConfig(el){
   if(pageCache.config){ el.innerHTML = pageCache.config; return; }
