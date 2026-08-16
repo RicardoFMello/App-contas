@@ -569,14 +569,15 @@ async function loadContas(el){
           <div class="item-sub">${escapeHtml(b.category) || 'Sem categoria'} ${e ? '· vence ' + formatDate(e.due_date) : ''}</div>
         </div>
         <div class="item-actions">
-          ${e ? statusBadge(e) : '<span class="item-sub">Sem lançamento</span>'}
+        ${e ? statusBadge(e) : '<span class="item-sub">Sem lançamento</span>'}
           <span style="font-weight:600; min-width:90px; text-align:right;">${e ? formatBRL(e.value) : ''}</span>
+          ${e ? `<button class="btn-secondary btn-sm" onclick="openEditEntryModal('${e.id}','${e.value}','${e.due_date}','${e.status}')">Editar</button>` : ''}
           ${e && e.status !== 'pago' ? `<button class="btn-secondary btn-sm" onclick="markPaid('${e.id}')">Marcar pago</button>` : ''}
           <button class="btn-secondary btn-sm" onclick="openAddEntryModal('${b.id}', '${(e?e.value:0)}')">Lançar mês</button>
+          <button class="btn-secondary btn-sm" onclick="openEditBillModal('${b.id}','${encodeURIComponent(b.name)}','${encodeURIComponent(b.category||'')}')">⚙️</button>
         </div>
       </div>`;
-  }).join('') || '<div class="item-sub">Nenhuma conta cadastrada ainda.</div>';
-
+  }).join('') || '<div class="item-sub">Nenhuma conta cadastrada ainda.</div>'; 
  const html = `
     <div class="card" style="margin-bottom:16px; display:flex; justify-content:flex-end;">
       <button class="btn-primary" style="width:auto; padding:10px 18px;" onclick="openAddBillModal()">+ Nova conta</button>
